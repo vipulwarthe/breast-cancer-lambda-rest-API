@@ -1,0 +1,238 @@
+AWS SageMaker Linear-Learner Algorithm for Breast Cancer Prediction:
+===================================================================
+AWS Services use for this project: 
+
+Amazon sagemaker/S3/IAM/Rest API/Lambda Function
+
+project link: 
+
+https://srinipratapgiri.medium.com/aws-sagemaker-linear-learner-algorithm-for-breast-cancer-prediction-92d8635994a1
+
+project repo: https://github.com/vipulwarthe/Breast-cancer-project
+
+Background:
+
+AWS SageMaker is a fully managed AWS service to build, train and deploy Machine Learning(ML) models. It has three services namely Notebook Instances, Training Instances and Endpoint Instances.The Notebook Instances can host Jupiter notebooks to perform exploratory data analysis by accessing raw data from Amazon s3 buckets and stores the training data again in s3. The Training Instances train the ML models on the training data by choosing any of the instances based on the data and model requirements. The trained models are in turn send to s3 for future use. The trained models are deployed to the endpoints by Endpoint Instances for making predictions on the unseen data.
+
+AWS SageMaker has many inbuilt ML algorithms and Linear-Learner is one amongst them. It is a supervised learning algorithm to solve either Regression or Classification problems. I will be using Linear-Learner algorithm for classifying whether a patient has breast cancer or not.
+
+The idea is here is to explore and understand the capabilities and functionality of AWS SageMaker for data exploratory , training and deployment processes.
+
+
+1) Create s3 bucket:
+====================
+
+Amazon Simple Storage Service (Amazon S3) is an object storage service that offers industry-leading scalability, data availability, security, and performance. You can use Amazon S3 to store and retrieve any amount of data at any time, from anywhere.
+
+-First create s3 bucket name "sagemaker-17" and add folder name "cancer-dir" in that folder add the data.csv file. 
+
+-Download the dataset from below link and upload to the s3 bucket.
+
+-https://www.kaggle.com/uciml/breast-cancer-wisconsin-data    OR below link
+
+-https://archive.ics.uci.edu/ml/datasets/Breast+Cancer+Wisconsin+(Original)
+
+s3://sagemaker-17/cancer-dir/data.csv
+
+2)Create a Notebook Instance:
+=============================
+Amazon SageMaker provides machine learning (ML) capabilities that are purpose-built for data scientists and developers to prepare, build, train, and deploy high-quality ML models efficiently.
+
+An Amazon SageMaker notebook instance is a fully managed machine learning (ML) Amazon Elastic Compute Cloud (Amazon EC2) compute instance that runs the Jupyter Notebook App. You use the notebook instance to create and manage Jupyter notebooks for preprocessing data and to train and deploy machine learning models.
+
+-Next step is to create a Notebook Instance to run a Jupyter Notebook.
+
+Notebook name- sagemaker_notebook  or cancer_detection
+Notebook instance type- ml.t2.medium
+Permission and encryption- create new IAM sagemaker execution role,choose any s3 bucket
+Root access- Enable 
+other setting default and create notebook instance.
+
+a)Open the AWS SageMaker service
+
+b)On the left of the side of the pane open the Notebook Instance
+
+c) Configure the Notebook instance with the rquired EC2 Instance suitable for your project
+
+d) Assign an IAM role to the Notebook Instance to access the AWS Sagemaker
+
+e) Once the Notebook is inService you can open Jupyter Notebook
+
+
+3)Setup lambda function:
+======================= 
+
+AWS Lambda allows you to add custom logic to AWS resources such as Amazon S3 buckets and Amazon DynamoDB tables, so you can easily apply compute to data as it enters or moves through the cloud.
+
+-click on create function
+-select Author from scratch -
+-Basic information - Function Name - my_lambda_function - Runtime -python 3.9
+-Architecture -86_64
+-Change default execution role - Create a new role with basic Lambda permissions 
+-Advanced settings - default
+-create function.
+
+
+Whether you created a new role or using the existing role, make sure to include the following policy, which gives your function permission to invoke a model endpoint:
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Effect": "Allow",
+			"Action": "logs:CreateLogGroup",
+			"Resource": "arn:aws:logs:us-east-1:521464151829:*"
+		},
+		{
+			"Effect": "Allow",
+			"Action": [
+				"logs:CreateLogStream",
+				"logs:PutLogEvents"
+			],
+			"Resource": [
+				"arn:aws:logs:us-east-1:521464151829:log-group:/aws/lambda/my_lambda_function:*"
+			]
+		},
+        {
+            "Sid": "VisualEditor0",
+            "Effect": "Allow",
+            "Action": "sagemaker:InvokeEndpoint",
+            "Resource": "*"
+        }
+    ]
+}
+
+-After successfully created the fuction lambda-ml-function go to the down code tab-code source and delete the code and paste new code from below link:
+
+https://aws.amazon.com/blogs/machine-learning/call-an-amazon-sagemaker-model-endpoint-using-amazon-api-gateway-and-aws-lambda/
+
+---------------------------------------------------------
+import os
+import io
+import boto3
+import json
+import csv
+
+# grab environment variables
+ENDPOINT_NAME = os.environ['ENDPOINT_NAME']
+runtime= boto3.client('runtime.sagemaker')
+
+def lambda_handler(event, context):
+    print("Received event: " + json.dumps(event, indent=2))
+    
+    data = json.loads(json.dumps(event))
+    payload = data['data']
+    print(payload)
+    
+    response = runtime.invoke_endpoint(EndpointName=ENDPOINT_NAME,
+                                       ContentType='text/csv',
+                                       Body=payload)
+    print(response)
+    result = json.loads(response['Body'].read().decode())
+    print(result)
+    pred = int(result['predictions'][0]['score'])
+    predicted_label = 'M' if pred == 1 else 'B'
+    
+    return predicted_label
+-------------------------------------------------------------
+
+-now deploy the code
+
+-click on Configuration - click on Edit environment variables - Add environment variables
+-Key - ENDPOINT_NAME - value- DEMO-linear-endpoint-202305111406 (endpoint name paste) -Save
+
+-Now go to IAM service and click on Roles - click on lambda-ml-function-role-zm42w5it role - click on Trust relationships - Trusted entities - all is good
+
+-now open AWSLambdaBasicExecutionRole-25e8fb8f-9f75-417e-a648-05398ff55ddc policy - edit in JSON format - add code in policy editor -Next - save changes
+
+4)Create Aamzon API Gateway: (Application programming interface)
+============================
+
+Amazon API Gateway is a fully managed service that makes it easy for developers to create, publish, maintain, monitor, and secure APIs at any scale. APIs act as the "front door" for applications to access data, business logic, or functionality from your backend services.
+
+-select REST API -Build - 
+-Choose the protocol - Rest - New API - API name - myapi -Description- my rest api
+-Endpoint Type-Regional - create API
+-Click on create resourse - Resource Name - my-resource -create resource
+-Now create Method - Method type - Post 
+-Integration type - Lambda Function
+-Lambda Region - select your region
+-Lambda Function - ml-model-lambda - create method
+
+-click on Test - paste below code in request body:
+-{"data": "1257815, 5, 1, 3, 1, 2, 2, 1, 1, 6, 4, 3, 2, 5, 5, 6, 5, 4, 4, 23, 6, 3, 2, 7, 8, 8, 3, 2, 1, 6"} 
+
+-click on Test
+
+-It will give you a prediction for the given input as "M"   (harmful or deadly) or "B" (not harmful in effect)
+
+-Diagnosis (M = malignant, B = benign)
+
+Now click on Deploy API
+Deployment stage - [New Stage]
+Stage Name - Production
+Stage Description - Production Environment
+Deployment description - NA
+
+click on created production It will create Invoke URL like below:
+
+https://lbaty7x9sg.execute-api.us-east-1.amazonaws.com/production/my-resource
+
+5)Creater EC2 instance:
+=======================
+
+Amazon EC2 provides scalable computing capacity in the AWS cloud. Leveraging it enables organizations to develop and deploy applications faster, without needing to invest in hardware upfront. Users can launch virtual servers, configure security and networking, and manage cookies from an intuitive dashboard.
+
+launch instance with ubuntu AMI/t2.micro/SSH/ALL Traffic/8gb configuration.
+
+-sudo su
+-sudo apt update && sudo apt upgrade -y
+-apt install python3-pip
+-sudo pip install --upgrade boto3
+-python3
+-import json
+-import requests
+
+-your need to use the resource name "myresource" and deploy API name "Production" 
+
+-( Invoke URL: https://dsegpwu8kk.execute-api.us-east-1.amazonaws.com/Production) copy URL from API gateway (stages) and paste in below command and after "URL/paste resource name"
+
+-r=requests.post("https://d534ka8e6c.execute-api.us-east-1.amazonaws.com/Production/api-ml-model", data=json.dumps({"data": "1257815, 5, 1, 3, 1, 2, 2, 1, 1, 6, 4, 3, 2, 5, 5, 6, 5, 4, 4, 23, 6, 3, 2, 7, 8, 8, 3, 2, 1, 6"})) 
+-r.content
+
+It will give you a prediction as "M"
+
+-Also it will give you URL for prodution deployment..
+
+
+Test with Postman:
+==================
+
+Now that we have the Lambda function, REST API, and test data, let’s test it using Postman, which is an HTTP client for testing web services. Make sure to download the latest version.
+
+When you deployed your API, it provided the invoke URL, which looks like
+
+https://{restapi_id}.execute-api.us-west-2.amazonaws.com/prod/predictbreastcancer.
+
+
+Enter the invoke URL into Postman.
+Choose POST as method.
+On the Body tab, enter the test data.
+Choose Send to see the returned result as B for the row of test data we looked at earlier.
+
+6)Conclusion
+============
+
+In this Demo, We created a model endpoint deployed and hosted by SageMaker. Then we created serverless components (a REST API and Lambda function) that invoke the endpoint. Now we know how to call an ML model endpoint hosted by SageMaker using serverless technology.
+
+The model is built and trained with AWS Linear-Learner classification algorithm for predicting the breast cancer. The accuracy of the classifier is 97.36% with a precision and recall of 92.59% and 96.15% respectively. It is observed that accuracy is good with Linear-Learner, which uses a linear model to map input to the outputs. The accuracy of predictions can be further improved by employing complex nonlinear AWS SageMaker algorithms.
+
+Deletation process:
+===================
+delete instance first
+delete rest api
+delete lambda function
+delete notebook
+
+
+
+
